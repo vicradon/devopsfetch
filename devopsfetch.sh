@@ -1,10 +1,12 @@
 #!/bin/bash
 
 # Include prettytable
-source ./prettytable.sh  
+source ./prettytable.sh
 
 # Setup logging
 LOG_FILE="./devopsfetch.log"
+LOG_MAX_SIZE=10485760 # 10 MB
+LOG_ROTATE_COUNT=5
 
 if [[ $EUID -eq 0 ]]; then
     LOG_FILE="/var/log/devopsfetch.log"
@@ -20,7 +22,41 @@ mkdir -p "$LOG_DIR"
 log() {
     local msg="$1"
     local level="$2"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $level - $msg" >> $LOG_FILE
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $level - $msg" >> "$LOG_FILE"
+}
+
+monitor() {
+    local interval="$1"
+    
+    while true; do
+        echo "Starting monitoring cycle at $(date)" >> "$LOG_FILE"
+        
+        {
+            list_port ""
+            list_docker_objects ""
+            list_nginx ""
+            list_users ""
+        } >> "$LOG_FILE" 2>&1
+
+        log "Monitoring cycle completed." "INFO"
+
+        # Wait for the specified interval before the next cycle
+        sleep "$interval"
+    done
+}
+
+log_rotate() {
+    if [[ -f "$LOG_FILE" && $(stat -c%s "$LOG_FILE") -ge $LOG_MAX_SIZE ]]; then
+        local timestamp=$(date +"%Y%m%d_%H%M%S")
+        local old_log_file="${LOG_FILE}_${timestamp}.old"
+        
+        echo "Rotating log file." >> "$LOG_FILE"
+        
+        mv "$LOG_FILE" "$old_log_file"
+        
+        touch "$LOG_FILE"
+        chmod 644 "$LOG_FILE"
+    fi
 }
 
 usage(){
@@ -322,8 +358,18 @@ while [[ "$#" -gt 0 ]]; do
             time_range "${time_args[@]}"
             exit 0
             ;;
+        -i|--interval)
+            shift
+            if [[ "$#" -gt 0 && "$1" =~ ^[0-9]+$ ]]; then
+                monitor "$1"
+            else
+                echo "Invalid interval. Please provide a numeric value for interval in seconds."
+                exit 1
+            fi
+            ;;
         -h|--help) usage; exit 0 ;;
         *) echo -e "Invalid option: $1\n"; usage; exit 1 ;;
     esac
 done
+
 usage
