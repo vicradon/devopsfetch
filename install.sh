@@ -1,13 +1,10 @@
 #!/bin/bash
 
-# Install dependencies
-apt-get update
-apt-get install -y python3 python3-pip docker.io nginx
-pip3 install --upgrade pip
-
 sudo touch /var/log/devopsfetch.log
-cp main.py /usr/local/bin/devopsfetch
+sudo chown root:root devopsfetch.sh
+cp devopsfetch.sh /usr/local/bin/devopsfetch
 chmod +x /usr/local/bin/devopsfetch
+
 
 # Create a systemd service file
 cat << 'EOF' > /etc/systemd/system/devopsfetch.service
