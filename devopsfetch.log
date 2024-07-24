@@ -76,3 +76,25 @@
 2024-07-24 08:50:50,525 - INFO - Ports listed.
 2024-07-24 08:51:44,270 - INFO - Ports listed.
 2024-07-24 08:51:52,664 - INFO - Ports listed.
+2024-07-24 15:13:47,493 - INFO - Ports listed.
+2024-07-24 15:14:15,028 - INFO - Ports listed.
+2024-07-24 15:14:23,566 - INFO - Ports listed.
+2024-07-24 15:16:32,233 - INFO - Ports listed.
+2024-07-24 15:16:54,968 - INFO - Ports listed.
+2024-07-24 15:18:12,235 - INFO - Ports listed.
+2024-07-24 15:24:40,008 - INFO - Ports listed.
+2024-07-24 15:39:53,968 - ERROR - An unexpected error occurred: list index out of range
+2024-07-24 15:40:09,454 - ERROR - An unexpected error occurred: list index out of range
+2024-07-24 15:40:44,910 - ERROR - An unexpected error occurred: 'list' object has no attribute 'split'
+2024-07-24 15:40:53,233 - ERROR - An unexpected error occurred: 'list' object has no attribute 'split'
+2024-07-24 15:41:06,993 - ERROR - An unexpected error occurred: 'list' object has no attribute 'split'
+2024-07-24 15:41:17,037 - ERROR - An unexpected error occurred: 'list' object has no attribute 'split'
+2024-07-24 15:41:22,392 - ERROR - An unexpected error occurred: list index out of range
+2024-07-24 15:41:46,856 - INFO - Ports listed.
+2024-07-24 15:41:58,066 - INFO - Ports listed.
+2024-07-24 15:42:06,609 - INFO - Ports listed.
+2024-07-24 15:42:46,177 - INFO - Ports listed.
+2024-07-24 15:42:56,772 - INFO - Ports listed.
+2024-07-24 15:43:21,553 - INFO - Ports listed.
+2024-07-24 15:43:28,154 - INFO - Ports listed.
+2024-07-24 15:43:33,649 - INFO - Ports listed.

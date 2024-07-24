@@ -5,8 +5,7 @@ import subprocess
 import datetime
 import os
 import logging
-import psutil
-import socket
+import sys
 import re
 import pwd
 import spwd
@@ -18,35 +17,11 @@ from prettytable import PrettyTable
 LOG_FILE = './devopsfetch.log'
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_service_name(port, proto):
-    try:
-        service = socket.getservbyport(port, proto)
-    except OSError:
-        service = 'unknown'
-    return service
+def ensure_sudo():
+    if os.geteuid() != 0:
+        print("Please run as root")
+        os.execvp("sudo", ["sudo"] + ["python3"] + sys.argv)
 
-def scan_ports():
-    result = []
-    
-    # Iterate over all TCP connections
-    for conn in psutil.net_connections(kind='inet'):
-        pid = conn.pid
-        if pid:
-            process = psutil.Process(pid)
-            user = process.username()
-            service = get_service_name(conn.laddr.port, 'tcp')
-            result.append((user, conn.laddr.port, service))
-    
-    # Iterate over all UDP connections
-    for conn in psutil.net_connections(kind='inet6'):
-        pid = conn.pid
-        if pid:
-            process = psutil.Process(pid)
-            user = process.username()
-            service = get_service_name(conn.laddr.port, 'udp')
-            result.append((user, conn.laddr.port, service))
-    
-    return result
 
 def time_range_is_valid(start_date, end_date):
     """ Validate that start time is before end time and both are not in the future. """
@@ -69,60 +44,77 @@ def time_range_is_valid(start_date, end_date):
         print(f"Invalid date format: {e}")
         return False
     
-# def list_ports(port_number):
-#     if port_number:
-#         result = subprocess.run(['ss', '-tuln', f'| grep {port_number}'], shell=True, capture_output=True, text=True)
-#         print(result.stdout)
-#         logging.info(f"Information for port {port_number} displayed.")
-#     else:
-#         result = subprocess.run(['ss', '-tuln'], capture_output=True, text=True)
-#         print(result.stdout)
-#         logging.info("Active ports listed.")
+    
+def get_listening_port(service_address):
+    listening_port = None
+
+    if "->" in service_address:
+        local_section = service_address.split('->')[0]
+        listening_port = local_section.split(':')[1]
+    else:
+        listening_port = local_section = service_address.split(":")[1]
+
+    return listening_port
+    
 
 def list_port(port=None):
     try:
-        command = ['lsof', '-i', '-P', '-n']
+        command = ['lsof', '-P', '-n', '-i'] # the positions of these flags matter
         if port:
-            command.extend(['-i', f':{port}'])
-        
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        lsof_output = result.stdout.strip()
+            command.extend([f':{port}'])
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            lsof_output = result.stdout.strip()
 
-        if not lsof_output:
-            print(f"No open ports found.")
-            return
+            if not lsof_output:
+                print(f"No open port with {port} number found.")
+                return
+            
+            line_output = lsof_output.splitlines()[1:]
+            port_details = line_output[0].split()
+            
+            table = PrettyTable()
+            table.field_names = ["Field", "Value"]
 
-        table = PrettyTable()
-        table.field_names = ["USER", "PORT", "SERVICE"]
+            # Define the fields to extract
+            fields = {
+                "User": port_details[2],
+                "Port": get_listening_port(port_details[8]),
+                "Service": port_details[0],
+                "Port Type": port_details[7],
+                "Process ID": port_details[1],
+            }
 
-        # Skip the first line which is the header
-        for line in lsof_output.splitlines()[1:]:
-            parts = line.split()
-            user = parts[2]
-            port_service = parts[0]
-            service_type = parts[-2]
-            service_address = parts[8]
-            listening_port = None
+            # Add fields to the table
+            for field, value in fields.items():
+                if value is None:
+                    value = "N/A"
+                table.add_row([field, value])
 
-            print(parts)
-            # continue
+            print(table)
 
-            print("->" in service_address, service_address)
+        else:
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            lsof_output = result.stdout.strip()
 
-            if "->" in service_address:
-                local_section = service_address.split('->')[0]
-                local_section.split(':')[1]
-            else:
-                pattern = r'\*:(\d+)\s'
-                match = re.search(pattern, service_address)
-                if match:
-                    listening_port = match.group(1)
-                    
+            if not lsof_output:
+                print(f"No open ports found.")
+                return
 
-            table.add_row([user, listening_port, port_service])
+            table = PrettyTable()
+            table.field_names = ["USER", "PORT", "SERVICE"]
 
-        
-        print(table)
+            # Skip the first line which is the header
+            for line in lsof_output.splitlines()[1:]:
+                parts = line.split()
+                user = parts[2]
+                port_service = parts[0]
+                service_address = parts[8]
+
+                listening_port = get_listening_port(service_address)
+
+                table.add_row([user, listening_port, port_service])
+
+            print(table)
         logging.info(f"Ports listed.")
     
     except subprocess.CalledProcessError as e:
@@ -349,6 +341,7 @@ def time_range(start_date, end_date):
 
 
 def main():
+    ensure_sudo()
     parser = argparse.ArgumentParser(description='A handy tool for Server Information Retrieval and Monitoring', usage='%(prog)s [options]')
     parser.add_argument('-p', '--port', nargs='?', const=True, help='Display active ports or details for a specific port')
     parser.add_argument('-d', '--docker', nargs='?', const=True, help='List Docker images or details for a specific container')
