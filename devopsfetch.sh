@@ -1,8 +1,21 @@
 #!/bin/bash
 
+# Include prettytable
+source ./prettytable.sh  
+
 # Setup logging
-# LOG_FILE="/var/log/devopsfetch.log"
 LOG_FILE="./devopsfetch.log"
+
+if [[ $EUID -eq 0 ]]; then
+    LOG_FILE="/var/log/devopsfetch.log"
+    LOG_DIR="/var/log"
+else
+    LOG_FILE="./devopsfetch.log"
+    LOG_DIR=$(dirname "$LOG_FILE")
+fi
+
+# Create the log file directory if not exists
+mkdir -p "$LOG_DIR"
 
 log() {
     local msg="$1"
@@ -23,7 +36,6 @@ Options:
   -h, --help                 Display this help and exit
 "
 }
-
 
 time_range_is_valid() {
     local start_date="$1"
@@ -76,21 +88,32 @@ list_port() {
         local pid=$(echo "$port_details" | awk '{print $2}')
         local listening_port=$(get_listening_port "$(echo "$port_details" | awk '{print $9}')")
         
-        printf "%-12s %-12s\n" "Field" "Value"
-        printf "%-12s %-12s\n" "User" "$user"
-        printf "%-12s %-12s\n" "Port" "$listening_port"
-        printf "%-12s %-12s\n" "Service" "$service"
-        printf "%-12s %-12s\n" "Port Type" "$port_type"
-        printf "%-12s %-12s\n" "Process ID" "$pid"
+        {
+            echo -e "Field\tValue"
+            echo -e "User\t$user"
+            echo -e "Port\t$listening_port"
+            echo -e "Service\t$service"
+            echo -e "Port Type\t$port_type"
+            echo -e "Process ID\t$pid"
+        } | prettytable 2
     else
-        lsof_output=$(lsof -P -n -i 2>/dev/null)
+        lsof_output=$(lsof -P -n -i | grep '(LISTEN)' 2>/dev/null)
         if [ -z "$lsof_output" ]; then
             echo "No open ports found."
             return
         fi
         
-        printf "%-12s %-12s %-12s\n" "USER" "PORT" "SERVICE"
-        echo "$lsof_output" | awk 'NR>1 {split($9, a, ":"); printf "%-12s %-12s %-12s\n", $3, a[2], $1}'
+        {
+            echo -e "USER\tPORT\tSERVICE"
+            echo "$lsof_output" | while IFS= read -r line; do
+                service=$(echo "$line" | awk '{print $1}')
+                user=$(echo "$line" | awk '{print $3}')
+                port=$(echo "$line" | awk -F'[ :]' '{print $(NF-1)}')
+                
+                printf "%-15s \t %-15s \t %-30s\n" "$user" "$port" "$service"
+            done
+        } | prettytable 3
+        
     fi
     
     log "Ports listed." "INFO"
@@ -114,26 +137,32 @@ list_docker_objects() {
         local args=$(echo "$container" | jq -r '.Args')
         local image=$(echo "$container" | jq -r '.Image')
         
-        printf "%-15s %-40s\n" "Field" "Value"
-        printf "%-15s %-40s\n" "ID" "$id"
-        printf "%-15s %-40s\n" "Name" "$name"
-        printf "%-15s %-40s\n" "Created At" "$created"
-        printf "%-15s %-40s\n" "Path" "$path"
-        printf "%-15s %-40s\n" "Args" "$args"
-        printf "%-15s %-40s\n" "Image" "$image"
+        {
+            echo -e "Field\tValue"
+            echo -e "ID\t$id"
+            echo -e "Name\t$name"
+            echo -e "Created At\t$created"
+            echo -e "Path\t$path"
+            echo -e "Args\t$args"
+            echo -e "Image\t$image"
+        } | prettytable 2
         
         log "Detailed information for container $container_name displayed." "INFO"
     else
         local images=$(docker images --format "{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}" 2>/dev/null)
         local containers=$(docker ps -a --format "{{.ID}}\t{{.Image}}\t{{.Command}}\t{{.CreatedAt}}\t{{.Status}}\t{{.Names}}" 2>/dev/null)
         
-        echo "Docker Images"
-        printf "%-20s %-10s %-20s %-15s\n" "Repository" "Tag" "ID" "Created Since"
-        echo "$images" | awk -F'\t' '{printf "%-20s %-10s %-20s %-15s\n", $1, $2, $3, $4}'
+        {
+            echo -e "Repository\tTag\tID\tCreated Since"
+            echo "$images"
+        } | prettytable 4
+        
         echo "-----------------------------------------------------------------------------------------------------"
-        echo "Docker Containers"
-        printf "%-15s %-20s %-30s %-20s %-20s %-20s\n" "ID" "Image" "Command" "Created At" "Status" "Names"
-        echo "$containers" | awk -F'\t' '{printf "%-15s %-20s %-30s %-20s %-20s %-20s\n", $1, $2, $3, $4, $5, $6}'
+        
+        {
+            echo -e "ID\tImage\tCommand\tCreated At\tStatus\tNames"
+            echo "$containers"
+        } | prettytable 6
         
         log "Docker images and containers listed." "INFO"
     fi
@@ -144,15 +173,12 @@ list_nginx() {
     local nginx_conf_dirs=('/etc/nginx/sites-enabled' '/etc/nginx/sites-available' '/etc/nginx/conf.d')
     local table=$(mktemp)
     
-    printf "%-20s %-40s %-40s\n" "Domain" "Proxy" "Config File" > "$table"
+    printf "%-20s\t%-40s\t%-40s\n" "Domain" "Proxy" "Config File" > "$table"
     
     for conf_dir in "${nginx_conf_dirs[@]}"; do
-        # Check if the directory exists
         if [ ! -d "$conf_dir" ]; then
             continue
         fi
-
-        # Check if the directory is empty
         if [ -z "$(ls -A "$conf_dir")" ]; then
             continue
         fi
@@ -172,7 +198,7 @@ list_nginx() {
                 fi
                 
                 for proxy in $proxies; do
-                    printf "%-20s %-40s %-40s\n" "$server_name" "$proxy" "$conf_file" >> "$table"
+                    echo -e "$server_name\t$proxy\t$conf_file" >> "$table"
                 done
             done
         done
@@ -181,7 +207,7 @@ list_nginx() {
     if [ -n "$domain" ] && [ $(wc -l < "$table") -eq 1 ]; then
         echo "No configuration found for domain $domain."
     else
-        cat "$table"
+        cat "$table" | prettytable 3
     fi
     
     rm "$table"
@@ -210,24 +236,49 @@ list_users() {
             last_changed=$(chage -l "$username" | grep "Last password change" | cut -d':' -f2 | xargs)
         fi
         
-        printf "%-20s %-40s\n" "Field" "Value"
-        printf "%-20s %-40s\n" "Username" "$username"
-        printf "%-20s %-40s\n" "User ID" "$uid"
-        printf "%-20s %-40s\n" "Group ID" "$gid"
-        printf "%-20s %-40s\n" "Home Directory" "$home"
-        printf "%-20s %-40s\n" "Shell" "$shell"
-        printf "%-20s %-40s\n" "Full Name" "$full_name"
-        printf "%-20s %-40s\n" "Password Last Changed" "$last_changed"
+        {
+            echo -e "Field\tValue"
+            echo -e "Username\t$username"
+            echo -e "User ID\t$uid"
+            echo -e "Group ID\t$gid"
+            echo -e "Home Directory\t$home"
+            echo -e "Shell\t$shell"
+            echo -e "Full Name\t$full_name"
+            echo -e "Password Last Changed\t$last_changed"
+        } | prettytable 2
         
         log "Detailed information for user $username displayed." "INFO"
     else
-        lastlog | awk 'NR>1 {if ($3 ~ /Never/) $4="Never logged in"; else $4=$3; printf "%-12s %-30s\n", $1, $4}'
+        {
+            echo -e "USER\tLAST LOGIN"
+            lastlog | while IFS= read -r line; do
+                # Skip the header line
+                if [[ "$line" == Username* ]]; then
+                    continue
+                fi
+                
+                line=$(echo "$line" | awk '{$1=$1;print}')
+                
+                IFS=' ' read -r -a array <<< "$line"
+                
+                username="${array[0]}"
+                last_login="${line#${username}}"
+                last_login=$(echo "$last_login" | xargs) 
+
+                # Check if last login time contains "**Never logged in**"
+                if [[ "$last_login" == "**Never logged in**" ]]; then
+                    last_login="Never logged in"
+                fi
+                
+                printf "%-15s\t%-30s\n" "$username" "$last_login"
+            done
+        } | prettytable 2
+        
         log "User logins listed." "INFO"
     fi
 }
 
 time_range() {
-    # Read the time arguments into an array
     local args=($@)
 
     if [ ${#args[@]} -eq 2 ]; then
@@ -276,4 +327,3 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 usage
-

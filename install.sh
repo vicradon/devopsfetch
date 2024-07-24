@@ -2,7 +2,7 @@
 
 sudo touch /var/log/devopsfetch.log
 sudo chown root:root devopsfetch.sh
-cp devopsfetch.sh /usr/local/bin/devopsfetch
+cp devopsfetch.sh prettytable.sh /usr/local/bin/devopsfetch
 chmod +x /usr/local/bin/devopsfetch
 
 
